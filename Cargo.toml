@@ -1,14 +1,11 @@
 [package]
-name = "terminal-quest"
+name = "terminal_quest"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-anyhow = "1.0.102"
-crossterm = "0.29.0"
-device_query = "4.0.1"
-ratatui = "0.30.0"
-serde = "1.0.228"
-serde_json = "1.0.149"
-sysinfo = "0.38.4"
-tokio = "1.51.1"
+ratatui = "0.26"
+crossterm = "0.27"
+sysinfo = "0.30"
+device_query = "2.1"
+anyhow = "1.0"
