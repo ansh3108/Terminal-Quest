@@ -2,11 +2,7 @@ use serde::{Serialize, Deserialize};
 use std::fs;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
-pub enum ItemType {
-    Shield,   
-    Weapon,   
-    Consumable, 
-}
+pub enum ItemType { Shield, Weapon }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Item {
@@ -16,11 +12,7 @@ pub struct Item {
 }
 
 #[derive(Serialize, Deserialize, PartialEq)]
-pub enum GameStatus {
-    Battling,
-    Victorious,
-    Defeated,
-}
+pub enum GameStatus { Battling, Victorious, Defeated }
 
 #[derive(Serialize, Deserialize)]
 pub struct Character {
@@ -31,7 +23,6 @@ pub struct Character {
     pub inventory: Vec<Item>,
 }
 
-#[derive(Serialize, Deserialize)]
 pub struct Boss {
     pub name: String,
     pub hp: f32,
@@ -43,66 +34,73 @@ pub struct App {
     pub character: Character,
     #[serde(skip)]
     pub current_boss: Option<Boss>,
-    #[serde(skip_serializing, default = "default_status")]
+    #[serde(skip)]
     pub status: GameStatus,
     #[serde(skip)]
     pub logs: Vec<String>,
+    #[serde(skip)]
+    pub distraction_timer: u32,
+    #[serde(skip)]
+    pub is_distracted: bool,
 }
-
-fn default_status() -> GameStatus { GameStatus::Battling }
 
 impl App {
     pub fn new() -> Self {
         Self {
-            character: Character {
-                hp: 100, max_hp: 100, xp: 0, level: 1, inventory: vec![],
-            },
+            character: Character { hp: 100, max_hp: 100, xp: 0, level: 1, inventory: vec![] },
             current_boss: None,
             status: GameStatus::Battling,
-            logs: vec!["Welcome back, Hunter.".to_string()],
+            logs: vec![],
+            distraction_timer: 0,
+            is_distracted: false,
         }
     }
 
-    pub fn start_boss(&mut self, name: &str) {
+    pub fn start_boss(&mut self, name: &str, minutes: u32) {
+        // 1 minute of work = roughly 60 focus pulses. 
+        // We set HP so the boss dies when the time is up.
+        let estimated_hp = minutes as f32 * 6.0; 
         self.current_boss = Some(Boss {
             name: name.to_string(),
-            hp: 100.0,
-            max_hp: 100.0,
+            hp: estimated_hp,
+            max_hp: estimated_hp,
         });
         self.status = GameStatus::Battling;
-        self.logs.push(format!("Quest Started: {}", name));
     }
 
-    pub fn take_damage(&mut self, base_amount: u32) {
-        let shield_power: f32 = self.character.inventory.iter()
-            .filter(|i| i.item_type == ItemType::Shield)
-            .map(|i| i.power)
-            .sum();
-
-        let reduction = (base_amount as f32 * shield_power).min(base_amount as f32);
-        let final_damage = (base_amount as f32 - reduction).round() as u32;
-
-        self.character.hp = self.character.hp.saturating_sub(final_damage);
+    pub fn track_distraction(&mut self) {
+        self.is_distracted = true;
+        self.distraction_timer += 1;
         
-        if final_damage > 0 {
-            self.logs.push(format!("Took {} damage (Blocked {})", final_damage, reduction));
+        if self.distraction_timer == 5 {
+            self.logs.push("!!! WARNING: DISTRACTION DETECTED !!!".into());
         }
-
-        if self.character.hp == 0 {
-            self.status = GameStatus::Defeated;
+        
+        if self.distraction_timer > 10 { // 10 second grace period
+            self.take_damage(2);
         }
     }
 
-    pub fn hit_boss(&mut self, base_damage: f32) {
-        let weapon_bonus: f32 = self.character.inventory.iter()
-            .filter(|i| i.item_type == ItemType::Weapon)
-            .map(|i| i.power)
-            .sum();
+    pub fn reset_distraction(&mut self) {
+        if self.is_distracted {
+            self.logs.push("Focus restored. Shield recharging.".into());
+        }
+        self.is_distracted = false;
+        self.distraction_timer = 0;
+    }
 
-        let total_damage = base_damage + weapon_bonus;
+    pub fn tick(&mut self) {
+        // This runs every second via the watcher Tick event
+    }
 
+    pub fn take_damage(&mut self, amount: u32) {
+        self.character.hp = self.character.hp.saturating_sub(amount);
+        if self.character.hp == 0 { self.status = GameStatus::Defeated; }
+    }
+
+    pub fn hit_boss(&mut self, damage: f32) {
         if let Some(ref mut boss) = self.current_boss {
-            boss.hp -= total_damage;
+            boss.hp -= damage;
             if boss.hp <= 0.0 {
                 self.status = GameStatus::Victorious;
                 self.process_victory();
@@ -112,23 +110,7 @@ impl App {
 
     fn process_victory(&mut self) {
         self.character.xp += 100;
-        
-        // Random loot drop
-        let loot_pool = vec![
-            Item { name: "Caffeine Shield".into(), item_type: ItemType::Shield, power: 0.2 },
-            Item { name: "Mechanical Sword".into(), item_type: ItemType::Weapon, power: 0.5 },
-            Item { name: "Noise-Canceling Helm".into(), item_type: ItemType::Shield, power: 0.1 },
-        ];
-
-        let dropped_item = loot_pool[self.character.xp as usize % loot_pool.len()].clone();
-        self.logs.push(format!("LOOT FOUND: {}", dropped_item.name));
-        self.character.inventory.push(dropped_item);
-
-        if self.character.xp >= self.character.level * 500 {
-            self.character.level += 1;
-            self.character.hp = self.character.max_hp;
-            self.logs.push("LEVEL UP! HP Restored.".into());
-        }
+        self.logs.push("BOSS DEFEATED. Quest complete.".into());
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
@@ -140,7 +122,7 @@ impl App {
     pub fn load() -> anyhow::Result<Self> {
         let data = fs::read_to_string("save_data.json")?;
         let mut app: App = serde_json::from_str(&data)?;
-        app.logs = vec!["State restored.".into()];
+        app.status = GameStatus::Battling;
         Ok(app)
     }
 }

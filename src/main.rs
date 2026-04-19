@@ -17,6 +17,9 @@ use crate::watcher::Event;
 struct Args {
     #[arg(default_value = "The Procrastination Demon")]
     task_name: String,
+
+    #[arg(short, long, default_value_t = 30)]
+    time: u32, // Minutes
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -27,9 +30,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     execute!(stdout, EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
-    // Try to load existing character, or make a new one
     let mut app = App::load().unwrap_or_else(|_| App::new());
-    app.start_boss(&args.task_name);
+    app.start_boss(&args.task_name, args.time);
 
     let (tx, rx) = std::sync::mpsc::channel();
     watcher::start_watcher(tx);
@@ -40,12 +42,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         while let Ok(event) = rx.try_recv() {
             match event {
                 Event::DistractionDetected => {
-                    app.take_damage(1);
+                    app.track_distraction();
                 }
                 Event::FocusPulse => {
-                    app.hit_boss(0.5);
+                    app.hit_boss(0.1); // Scaled for longer tasks
+                    app.reset_distraction();
                 }
-                Event::Tick => {}
+                Event::Tick => {
+                    app.tick();
+                }
             }
         }
 
@@ -58,13 +63,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         }
 
-        if matches!(app.status, GameStatus::Victorious) {
+        if matches!(app.status, GameStatus::Victorious) || matches!(app.status, GameStatus::Defeated) {
             app.save()?;
-            thread::sleep(Duration::from_secs(2));
-            break;
-        }
-
-        if matches!(app.status, GameStatus::Defeated) {
             thread::sleep(Duration::from_secs(3));
             break;
         }
