@@ -11,8 +11,13 @@ pub struct Item {
     pub power: f32,
 }
 
-#[derive(Serialize, Deserialize, PartialEq)]
-pub enum GameStatus { Battling, Victorious, Defeated }
+#[derive(Serialize, Deserialize, PartialEq, Default)] // Added Default here
+pub enum GameStatus {
+    #[default] // This tells Rust to start here
+    Battling,
+    Victorious,
+    Defeated,
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Character {
@@ -34,7 +39,7 @@ pub struct App {
     pub character: Character,
     #[serde(skip)]
     pub current_boss: Option<Boss>,
-    #[serde(skip)]
+    #[serde(skip_serializing, default)] // Simplified this to just use the trait
     pub status: GameStatus,
     #[serde(skip)]
     pub logs: Vec<String>,
@@ -47,18 +52,22 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
-            character: Character { hp: 100, max_hp: 100, xp: 0, level: 1, inventory: vec![] },
+            character: Character { 
+                hp: 100, 
+                max_hp: 100, 
+                xp: 0, 
+                level: 1, 
+                inventory: vec![] 
+            },
             current_boss: None,
             status: GameStatus::Battling,
-            logs: vec![],
+            logs: vec!["System initialized.".into()],
             distraction_timer: 0,
             is_distracted: false,
         }
     }
 
     pub fn start_boss(&mut self, name: &str, minutes: u32) {
-        // 1 minute of work = roughly 60 focus pulses. 
-        // We set HP so the boss dies when the time is up.
         let estimated_hp = minutes as f32 * 6.0; 
         self.current_boss = Some(Boss {
             name: name.to_string(),
@@ -66,32 +75,24 @@ impl App {
             max_hp: estimated_hp,
         });
         self.status = GameStatus::Battling;
+        self.logs.push(format!("Quest: {}. Estimated time: {}m", name, minutes));
     }
 
     pub fn track_distraction(&mut self) {
         self.is_distracted = true;
         self.distraction_timer += 1;
         
-        if self.distraction_timer == 5 {
-            self.logs.push("!!! WARNING: DISTRACTION DETECTED !!!".into());
-        }
-        
-        if self.distraction_timer > 10 { // 10 second grace period
+        if self.distraction_timer > 10 {
             self.take_damage(2);
         }
     }
 
     pub fn reset_distraction(&mut self) {
-        if self.is_distracted {
-            self.logs.push("Focus restored. Shield recharging.".into());
-        }
         self.is_distracted = false;
         self.distraction_timer = 0;
     }
 
-    pub fn tick(&mut self) {
-        // This runs every second via the watcher Tick event
-    }
+    pub fn tick(&mut self) {}
 
     pub fn take_damage(&mut self, amount: u32) {
         self.character.hp = self.character.hp.saturating_sub(amount);
@@ -110,7 +111,7 @@ impl App {
 
     fn process_victory(&mut self) {
         self.character.xp += 100;
-        self.logs.push("BOSS DEFEATED. Quest complete.".into());
+        self.logs.push("Quest Complete! You gained 100 XP.".into());
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
@@ -122,7 +123,7 @@ impl App {
     pub fn load() -> anyhow::Result<Self> {
         let data = fs::read_to_string("save_data.json")?;
         let mut app: App = serde_json::from_str(&data)?;
-        app.status = GameStatus::Battling;
+        app.logs = vec!["Progress restored from save file.".into()];
         Ok(app)
     }
 }
