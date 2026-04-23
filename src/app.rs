@@ -1,5 +1,6 @@
 use serde::{Serialize, Deserialize};
 use std::fs;
+use notify_rust::Notification;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
 pub enum ItemType { Shield, Weapon }
@@ -11,9 +12,9 @@ pub struct Item {
     pub power: f32,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Default)] // Added Default here
+#[derive(Serialize, Deserialize, PartialEq, Default)]
 pub enum GameStatus {
-    #[default] // This tells Rust to start here
+    #[default]
     Battling,
     Victorious,
     Defeated,
@@ -32,6 +33,7 @@ pub struct Boss {
     pub name: String,
     pub hp: f32,
     pub max_hp: f32,
+    pub monster_type: usize,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -39,64 +41,65 @@ pub struct App {
     pub character: Character,
     #[serde(skip)]
     pub current_boss: Option<Boss>,
-    #[serde(skip_serializing, default)] // Simplified this to just use the trait
+    #[serde(skip, default)]
     pub status: GameStatus,
     #[serde(skip)]
     pub logs: Vec<String>,
     #[serde(skip)]
     pub distraction_timer: u32,
-    #[serde(skip)]
-    pub is_distracted: bool,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
-            character: Character { 
-                hp: 100, 
-                max_hp: 100, 
-                xp: 0, 
-                level: 1, 
-                inventory: vec![] 
-            },
+            character: Character { hp: 100, max_hp: 100, xp: 0, level: 1, inventory: vec![] },
             current_boss: None,
             status: GameStatus::Battling,
-            logs: vec!["System initialized.".into()],
+            logs: vec!["System Live.".into()],
             distraction_timer: 0,
-            is_distracted: false,
         }
     }
 
     pub fn start_boss(&mut self, name: &str, minutes: u32) {
-        let estimated_hp = minutes as f32 * 6.0; 
+        let estimated_hp = minutes as f32 * 6.0;
         self.current_boss = Some(Boss {
             name: name.to_string(),
             hp: estimated_hp,
             max_hp: estimated_hp,
+            monster_type: (minutes as usize % 3), 
         });
         self.status = GameStatus::Battling;
-        self.logs.push(format!("Quest: {}. Estimated time: {}m", name, minutes));
     }
 
     pub fn track_distraction(&mut self) {
-        self.is_distracted = true;
         self.distraction_timer += 1;
         
+        if self.distraction_timer == 11 {
+            let _ = Notification::new()
+                .summary("TERMINAL QUEST")
+                .body("TRAP SPRUNG! You are taking damage!")
+                .icon("dialog-warning")
+                .show();
+        }
+
         if self.distraction_timer > 10 {
             self.take_damage(2);
         }
     }
 
     pub fn reset_distraction(&mut self) {
-        self.is_distracted = false;
         self.distraction_timer = 0;
     }
 
-    pub fn tick(&mut self) {}
-
     pub fn take_damage(&mut self, amount: u32) {
         self.character.hp = self.character.hp.saturating_sub(amount);
-        if self.character.hp == 0 { self.status = GameStatus::Defeated; }
+        if self.character.hp == 0 { 
+            self.status = GameStatus::Defeated;
+            let _ = Notification::new()
+                .summary("QUEST FAILED")
+                .body("You have been defeated by distractions.")
+                .show();
+        }
     }
 
     pub fn hit_boss(&mut self, damage: f32) {
@@ -104,14 +107,12 @@ impl App {
             boss.hp -= damage;
             if boss.hp <= 0.0 {
                 self.status = GameStatus::Victorious;
-                self.process_victory();
+                let _ = Notification::new()
+                    .summary("VICTORY")
+                    .body(&format!("You defeated {}!", boss.name))
+                    .show();
             }
         }
-    }
-
-    fn process_victory(&mut self) {
-        self.character.xp += 100;
-        self.logs.push("Quest Complete! You gained 100 XP.".into());
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
@@ -122,8 +123,6 @@ impl App {
 
     pub fn load() -> anyhow::Result<Self> {
         let data = fs::read_to_string("save_data.json")?;
-        let mut app: App = serde_json::from_str(&data)?;
-        app.logs = vec!["Progress restored from save file.".into()];
-        Ok(app)
+        Ok(serde_json::from_str(&data)?)
     }
 }
