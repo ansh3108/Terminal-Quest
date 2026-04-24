@@ -15,19 +15,18 @@ pub fn start_watcher(tx: mpsc::Sender<Event>) {
         RefreshKind::new().with_processes(ProcessRefreshKind::new())
     );
     let device_state = DeviceState::new();
-    
-    let blacklist = vec!["settings"]; //settings for testing
+    let blacklist = vec!["chrome", "discord", "spotify", "settings"];
 
     thread::spawn(move || {
         loop {
             sys.refresh_processes();
 
-            let is_distracted = sys.processes().values().any(|p| {
+            let distracted = sys.processes().values().any(|p| {
                 let name = p.name().to_lowercase();
                 blacklist.iter().any(|&b| name.contains(b))
             });
 
-            if is_distracted {
+            if distracted {
                 let _ = tx.send(Event::DistractionDetected);
             }
 

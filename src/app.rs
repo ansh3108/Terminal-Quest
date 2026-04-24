@@ -3,7 +3,7 @@ use std::fs;
 use notify_rust::Notification;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
-pub enum ItemType { Shield, Weapon }
+pub enum ItemType { Shield, Weapon, Elixir }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Item {
@@ -12,9 +12,10 @@ pub struct Item {
     pub power: f32,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Default)]
+#[derive(Serialize, Deserialize, PartialEq, Default, Clone, Copy)]
 pub enum GameStatus {
     #[default]
+    Resting,
     Battling,
     Victorious,
     Defeated,
@@ -52,66 +53,87 @@ pub struct App {
 impl App {
     pub fn new() -> Self {
         Self {
-            character: Character { hp: 100, max_hp: 100, xp: 0, level: 1, inventory: vec![] },
+            character: Character {
+                hp: 100,
+                max_hp: 100,
+                xp: 0,
+                level: 1,
+                inventory: vec![],
+            },
             current_boss: None,
-            status: GameStatus::Battling,
-            logs: vec!["System Live.".into()],
+            status: GameStatus::Resting,
+            logs: vec!["Welcome to the Hub.".into()],
             distraction_timer: 0,
         }
     }
 
     pub fn start_boss(&mut self, name: &str, minutes: u32) {
-        let estimated_hp = minutes as f32 * 6.0;
+        let hp = minutes as f32 * 10.0;
         self.current_boss = Some(Boss {
             name: name.to_string(),
-            hp: estimated_hp,
-            max_hp: estimated_hp,
-            monster_type: (minutes as usize % 3), 
+            hp,
+            max_hp: hp,
+            monster_type: (minutes as usize % 3),
         });
         self.status = GameStatus::Battling;
+        self.logs.push(format!("Quest started: {}", name));
+    }
+
+    pub fn take_damage(&mut self, amount: u32) {
+        let shield_reduction: f32 = self.character.inventory.iter()
+            .filter(|i| i.item_type == ItemType::Shield)
+            .map(|i| i.power)
+            .sum();
+
+        let reduced = (amount as f32 * (1.0 - shield_reduction)).max(1.0) as u32;
+        self.character.hp = self.character.hp.saturating_sub(reduced);
+        
+        if self.character.hp == 0 {
+            self.status = GameStatus::Defeated;
+            let _ = Notification::new().summary("QUEST FAILED").body("You collapsed.").show();
+        }
+    }
+
+    pub fn hit_boss(&mut self, base_damage: f32) {
+        if self.status != GameStatus::Battling { return; }
+        
+        let weapon_bonus: f32 = self.character.inventory.iter()
+            .filter(|i| i.item_type == ItemType::Weapon)
+            .map(|i| i.power)
+            .sum();
+
+        if let Some(ref mut boss) = self.current_boss {
+            boss.hp -= base_damage + weapon_bonus;
+            if boss.hp <= 0.0 {
+                self.status = GameStatus::Victorious;
+                self.process_victory();
+            }
+        }
+    }
+
+    fn process_victory(&mut self) {
+        self.character.xp += 100;
+        let elixir = Item { name: "Caffeine Elixir".into(), item_type: ItemType::Elixir, power: 0.0 };
+        self.character.inventory.push(elixir);
+        self.logs.push("Victory! Elixir acquired.".into());
+        let _ = Notification::new().summary("VICTORY").body("Boss defeated!").show();
+    }
+
+    pub fn use_elixir(&mut self) {
+        if let Some(pos) = self.character.inventory.iter().position(|i| i.item_type == ItemType::Elixir) {
+            self.character.inventory.remove(pos);
+            self.character.hp = (self.character.hp + 30).min(self.character.max_hp);
+            self.logs.push("Healed 30 HP.".into());
+        }
     }
 
     pub fn track_distraction(&mut self) {
         self.distraction_timer += 1;
-        
         if self.distraction_timer == 11 {
-            let _ = Notification::new()
-                .summary("TERMINAL QUEST")
-                .body("TRAP SPRUNG! You are taking damage!")
-                .icon("dialog-warning")
-                .show();
+            let _ = Notification::new().summary("TRAP").body("Take cover!").show();
         }
-
         if self.distraction_timer > 10 {
             self.take_damage(2);
-        }
-    }
-
-    pub fn reset_distraction(&mut self) {
-        self.distraction_timer = 0;
-    }
-
-    pub fn take_damage(&mut self, amount: u32) {
-        self.character.hp = self.character.hp.saturating_sub(amount);
-        if self.character.hp == 0 { 
-            self.status = GameStatus::Defeated;
-            let _ = Notification::new()
-                .summary("QUEST FAILED")
-                .body("You have been defeated by distractions.")
-                .show();
-        }
-    }
-
-    pub fn hit_boss(&mut self, damage: f32) {
-        if let Some(ref mut boss) = self.current_boss {
-            boss.hp -= damage;
-            if boss.hp <= 0.0 {
-                self.status = GameStatus::Victorious;
-                let _ = Notification::new()
-                    .summary("VICTORY")
-                    .body(&format!("You defeated {}!", boss.name))
-                    .show();
-            }
         }
     }
 
