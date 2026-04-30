@@ -10,12 +10,11 @@ pub enum Event {
     FocusPulse,
 }
 
-pub fn start_watcher(tx: mpsc::Sender<Event>) {
+pub fn start_watcher(tx: mpsc::Sender<Event>, blacklist: Vec<String>) {
     let mut sys = System::new_with_specifics(
         RefreshKind::new().with_processes(ProcessRefreshKind::new())
     );
     let device_state = DeviceState::new();
-    let blacklist = vec!["chrome", "discord", "spotify", "settings"];
 
     thread::spawn(move || {
         loop {
@@ -23,7 +22,7 @@ pub fn start_watcher(tx: mpsc::Sender<Event>) {
 
             let distracted = sys.processes().values().any(|p| {
                 let name = p.name().to_lowercase();
-                blacklist.iter().any(|&b| name.contains(b))
+                blacklist.iter().any(|b| name.contains(b))
             });
 
             if distracted {

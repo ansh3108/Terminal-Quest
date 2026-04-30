@@ -29,10 +29,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
     let mut app = App::load().unwrap_or_else(|_| App::new());
-    app.start_boss(&args.task, args.time);
+    
+    if args.task != "The Bug Swarm" {
+        app.start_boss(&args.task, args.time);
+    }
 
     let (tx, rx) = std::sync::mpsc::channel();
-    watcher::start_watcher(tx);
+    watcher::start_watcher(tx, app.config.blacklist.clone());
 
     loop {
         terminal.draw(|f| ui::render(f, &app))?;
@@ -40,7 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         while let Ok(event) = rx.try_recv() {
             match event {
                 Event::DistractionDetected => { if app.status == GameStatus::Battling { app.track_distraction(); } }
-                Event::FocusPulse => { app.hit_boss(0.5); app.distraction_timer = 0; }
+                Event::FocusPulse => { app.register_focus(0.5); }
                 Event::Tick => {}
             }
         }
@@ -50,7 +53,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 match key.code {
                     KeyCode::Char('q') => { app.save()?; break; }
                     KeyCode::Char('u') => { app.use_elixir(); }
-                    KeyCode::Char('n') => { if app.status != GameStatus::Battling { app.start_boss("Next Task", 15); } }
+                    KeyCode::Char('s') => { app.toggle_dashboard(); }
+                    KeyCode::Char('n') => { 
+                        if app.status == GameStatus::Resting || app.status == GameStatus::Dashboard { 
+                            app.start_boss("Next Challenge", 15); 
+                        } 
+                    }
                     _ => {}
                 }
             }
