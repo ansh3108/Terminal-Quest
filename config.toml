@@ -1,3 +1,5 @@
 blacklist = ["chrome", "discord", "spotify", "settings", "twitter", "reddit"]
 grace_period_seconds = 10
 base_heal_amount = 30
+audio_enabled = true
+discord_webhook_url = ""

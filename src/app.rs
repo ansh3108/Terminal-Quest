@@ -1,12 +1,16 @@
 use serde::{Serialize, Deserialize};
 use std::fs;
 use notify_rust::Notification;
+use crate::audio;
+use crate::webhook;
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct AppConfig {
     pub blacklist: Vec<String>,
     pub grace_period_seconds: u32,
     pub base_heal_amount: u32,
+    pub audio_enabled: bool,
+    pub discord_webhook_url: String,
 }
 
 impl Default for AppConfig {
@@ -15,6 +19,8 @@ impl Default for AppConfig {
             blacklist: vec!["chrome".into(), "discord".into(), "spotify".into()],
             grace_period_seconds: 10,
             base_heal_amount: 30,
+            audio_enabled: true,
+            discord_webhook_url: "".into(),
         }
     }
 }
@@ -121,6 +127,8 @@ impl App {
         
         if self.status != GameStatus::Battling { return; }
         
+        if self.config.audio_enabled { audio::play_hit(); }
+
         let weapon_bonus: f32 = self.character.inventory.iter()
             .filter(|i| i.item_type == ItemType::Weapon)
             .map(|i| i.power)
@@ -138,6 +146,23 @@ impl App {
     fn process_victory(&mut self) {
         self.character.xp += 100;
         self.character.bosses_defeated += 1;
+        
+        if self.character.xp >= self.character.level * 100 {
+            self.character.level += 1;
+            self.character.hp = self.character.max_hp;
+            self.logs.push("LEVEL UP! HP Fully Restored.".into());
+        }
+
+        if self.config.audio_enabled { audio::play_victory(); }
+        
+        if let Some(boss) = &self.current_boss {
+            webhook::send_victory_message(
+                self.config.discord_webhook_url.clone(), 
+                boss.name.clone(), 
+                self.character.level
+            );
+        }
+
         let elixir = Item { name: "Caffeine Elixir".into(), item_type: ItemType::Elixir, power: 0.0 };
         self.character.inventory.push(elixir);
         self.logs.push("Target eliminated. Loot acquired.".into());
@@ -153,6 +178,8 @@ impl App {
         let reduced = (amount as f32 * (1.0 - shield_reduction)).max(1.0) as u32;
         self.character.hp = self.character.hp.saturating_sub(reduced);
         
+        if self.config.audio_enabled { audio::play_damage(); }
+
         if self.character.hp == 0 {
             self.status = GameStatus::Defeated;
             let _ = Notification::new().summary("QUEST FAILED").body("You were overwhelmed.").show();

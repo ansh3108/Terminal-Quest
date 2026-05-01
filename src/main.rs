@@ -1,6 +1,8 @@
 mod app;
 mod ui;
 mod watcher;
+mod audio;
+mod webhook;
 
 use clap::Parser;
 use std::{error::Error, io, time::Duration};
@@ -42,8 +44,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         while let Ok(event) = rx.try_recv() {
             match event {
-                Event::DistractionDetected => { if app.status == GameStatus::Battling { app.track_distraction(); } }
-                Event::FocusPulse => { app.register_focus(0.5); }
+                Event::DistractionDetected => { 
+                    if app.status == GameStatus::Battling { 
+                        app.track_distraction(); 
+                    } 
+                }
+                Event::FocusPulse => { 
+                    app.register_focus(0.5); 
+                }
                 Event::Tick => {}
             }
         }
@@ -51,7 +59,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         if event::poll(Duration::from_millis(50))? {
             if let CEvent::Key(key) = event::read()? {
                 match key.code {
-                    KeyCode::Char('q') => { app.save()?; break; }
+                    KeyCode::Char('q') => { 
+                        app.save()?; 
+                        break; 
+                    }
                     KeyCode::Char('u') => { app.use_elixir(); }
                     KeyCode::Char('s') => { app.toggle_dashboard(); }
                     KeyCode::Char('n') => { 
