@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Alignment},
-    style::{Color, Style},
+    style::{Color, Style, Modifier},
     widgets::{Block, Borders, Paragraph, Gauge, List, ListItem},
     Frame,
 };
@@ -18,10 +18,15 @@ pub fn render(f: &mut Frame, app: &App) {
         .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Length(6)])
         .split(f.size());
 
-    let status_color = if app.distraction_timer > app.config.grace_period_seconds { Color::Red } else { Color::Green };
+    let status_color = if app.pomodoro_break { Color::Cyan } 
+                       else if app.distraction_timer > app.config.grace_period_seconds { Color::Red } 
+                       else { Color::Green };
+                       
+    let header_title = format!(" LVL {} | {} GOLD ", app.character.level, app.character.gold);
+    
     f.render_widget(
         Gauge::default()
-            .block(Block::default().title(format!(" LVL {} ", app.character.level)).borders(Borders::ALL))
+            .block(Block::default().title(header_title).borders(Borders::ALL))
             .gauge_style(Style::default().fg(status_color))
             .percent((app.character.hp as f64 / app.character.max_hp as f64 * 100.0) as u16),
         chunks[0],
@@ -41,7 +46,12 @@ pub fn render(f: &mut Frame, app: &App) {
         GameStatus::Battling => {
             if let Some(boss) = &app.current_boss {
                 let b_hp = (boss.hp / boss.max_hp * 100.0).max(0.0) as u16;
-                let display = format!("\n{}\n\nTARGET: {}\nHP: {}%", MONSTERS[boss.monster_type], boss.name, b_hp);
+                let mut display = format!("\n{}\n\nTARGET: {}\nHP: {}%", MONSTERS[boss.monster_type], boss.name, b_hp);
+                
+                if app.pomodoro_break {
+                    display = format!("\n[ SHIELD OF REST ACTIVE ]\n\nTake a break!\nShield lowers in: {}s", app.break_timer);
+                }
+
                 f.render_widget(Paragraph::new(display).alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
             }
         }
@@ -53,8 +63,16 @@ pub fn render(f: &mut Frame, app: &App) {
             );
             f.render_widget(Paragraph::new(stats).alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
         }
+        GameStatus::Merchant => {
+            let shop = format!(
+                "\n\n[ THE MERCHANT ]\n\nYou have {} Gold.\n\n[1] Heavy Armor (100g): Max HP +50\n[2] Mechanical Switches (150g): +0.5 Damage\n[3] Siren's Mute (75g): -20% Trap Damage\n\nPress 1, 2, or 3 to buy.",
+                app.character.gold
+            );
+            f.render_widget(Paragraph::new(shop).alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
+        }
         _ => {
-            f.render_widget(Paragraph::new("\n( ^_^) \n\nSAFE AT CAMP\nPress 'n' for new quest.\nPress 's' for stats.").alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
+            let camp = "\n( ^_^) \n\nSAFE AT CAMP\n\n[n] New Quest\n[s] Stats\n[m] Merchant\n[u] Use Elixir";
+            f.render_widget(Paragraph::new(camp).alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
         }
     }
 

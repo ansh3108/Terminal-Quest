@@ -52,7 +52,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Event::FocusPulse => { 
                     app.register_focus(0.5); 
                 }
-                Event::Tick => {}
+                Event::Tick => {
+                    app.tick();
+                }
             }
         }
 
@@ -64,12 +66,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                         break; 
                     }
                     KeyCode::Char('u') => { app.use_elixir(); }
-                    KeyCode::Char('s') => { app.toggle_dashboard(); }
+                    KeyCode::Char('s') => { app.set_status(GameStatus::Dashboard); }
+                    KeyCode::Char('m') => { app.set_status(GameStatus::Merchant); }
                     KeyCode::Char('n') => { 
-                        if app.status == GameStatus::Resting || app.status == GameStatus::Dashboard { 
-                            app.start_boss("Next Challenge", 15); 
+                        if app.status != GameStatus::Battling { 
+                            app.start_boss("Next Challenge", 25); 
                         } 
                     }
+                    KeyCode::Esc => { app.set_status(GameStatus::Resting); } // Exit menus
+                    KeyCode::Char('1') if app.status == GameStatus::Merchant => { app.buy_item(1); }
+                    KeyCode::Char('2') if app.status == GameStatus::Merchant => { app.buy_item(2); }
+                    KeyCode::Char('3') if app.status == GameStatus::Merchant => { app.buy_item(3); }
                     _ => {}
                 }
             }
