@@ -16,4 +16,4 @@ notify-rust = "4.10"
 rand = "0.8"
 toml = "0.8"
 rodio = "0.17" 
-ureq = "2.9"   
+ureq = { version = "2.9", features = ["json"] } 
