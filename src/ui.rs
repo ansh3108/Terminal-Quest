@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Alignment},
-    style::{Color, Style, Modifier},
+    style::{Color, Style},
     widgets::{Block, Borders, Paragraph, Gauge, List, ListItem},
     Frame,
 };
@@ -71,8 +71,26 @@ pub fn render(f: &mut Frame, app: &App) {
             f.render_widget(Paragraph::new(shop).alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
         }
         _ => {
-            let camp = "\n( ^_^) \n\nSAFE AT CAMP\n\n[n] New Quest\n[s] Stats\n[m] Merchant\n[u] Use Elixir";
-            f.render_widget(Paragraph::new(camp).alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
+            let mut camp = String::from("\n( ^_^) \n\nSAFE AT CAMP\n\n");
+            
+            if !app.quest_board.is_empty() {
+                camp.push_str(&format!("[ QUEST BOARD ]\nPending Tasks: {}\nUp Next: {}\n\n", 
+                    app.quest_board.len(), 
+                    app.quest_board[0].name
+                ));
+                camp.push_str("[n] Start Next Quest\n");
+            } else {
+                camp.push_str("No pending quests.\n\n[n] Random Quest\n");
+            }
+            
+            camp.push_str("[s] Stats\n[m] Merchant\n[u] Use Elixir");
+            
+            f.render_widget(
+                Paragraph::new(camp)
+                    .alignment(Alignment::Center)
+                    .block(Block::default().borders(Borders::ALL)), 
+                mid[1]
+            );
         }
     }
 

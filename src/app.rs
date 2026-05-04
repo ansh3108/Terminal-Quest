@@ -58,6 +58,7 @@ pub struct Character {
     pub focus_pulses: u32,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Boss {
     pub name: String,
     pub hp: f32,
@@ -70,6 +71,7 @@ pub struct App {
     pub character: Character,
     #[serde(skip)]
     pub config: AppConfig,
+    pub quest_board: Vec<Boss>,
     #[serde(skip)]
     pub current_boss: Option<Boss>,
     #[serde(skip, default)]
@@ -94,6 +96,7 @@ impl App {
                 bosses_defeated: 0, focus_pulses: 0,
             },
             config: Self::load_config(),
+            quest_board: vec![],
             current_boss: None,
             status: GameStatus::Resting,
             logs: vec!["System Initialized.".into()],
@@ -114,9 +117,60 @@ impl App {
 
     pub fn set_status(&mut self, new_status: GameStatus) {
         if self.status == GameStatus::Battling && new_status != GameStatus::Battling {
-            return; // Can't open menus mid-battle
+            return;
         }
         self.status = new_status;
+    }
+
+    pub fn sync_markdown(&mut self, filepath: &str) {
+        if let Ok(content) = fs::read_to_string(filepath) {
+            let mut count = 0;
+            self.quest_board.clear();
+
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("- [ ]") || trimmed.starts_with("* [ ]") {
+                    let task_name = trimmed[5..].trim().to_string();
+                    let mut time = 20;
+                    let mut name = task_name.clone();
+                    
+                    if task_name.ends_with("m)") {
+                        if let Some(start) = task_name.rfind('(') {
+                            let time_str = &task_name[start+1..task_name.len()-2];
+                            if let Ok(parsed_time) = time_str.parse::<u32>() {
+                                time = parsed_time;
+                                name = task_name[..start].trim().to_string();
+                            }
+                        }
+                    }
+
+                    let hp = time as f32 * 10.0;
+                    self.quest_board.push(Boss {
+                        name,
+                        hp,
+                        max_hp: hp,
+                        monster_type: (time as usize % 3),
+                    });
+                    count += 1;
+                }
+            }
+            self.logs.push(format!("Synced {} quests from {}.", count, filepath));
+        } else {
+            self.logs.push(format!("Could not read {}. Does it exist?", filepath));
+        }
+    }
+
+    pub fn start_next_from_board(&mut self) {
+        if !self.quest_board.is_empty() {
+            let next_boss = self.quest_board.remove(0);
+            self.logs.push(format!("Engaging: {}", next_boss.name));
+            self.current_boss = Some(next_boss);
+            self.status = GameStatus::Battling;
+            self.focus_streak = 0;
+            self.pomodoro_break = false;
+        } else {
+            self.start_boss("Random Encounter", 20);
+        }
     }
 
     pub fn start_boss(&mut self, name: &str, minutes: u32) {
@@ -144,10 +198,9 @@ impl App {
         }
 
         self.focus_streak += 1;
-        // 1500 pulses is roughly 25 minutes of continuous typing
         if self.focus_streak >= 1500 {
             self.pomodoro_break = true;
-            self.break_timer = 300; // 5 minute break
+            self.break_timer = 300;
             self.logs.push("POMODORO SHIELD ACTIVATED! 5 minute mandatory break.".into());
             let _ = Notification::new().summary("MANDATORY BREAK").body("Step away from the keyboard!").show();
             return;
@@ -221,7 +274,7 @@ impl App {
     }
 
     pub fn take_damage(&mut self, amount: u32) {
-        if self.pomodoro_break { return; } // Immune to traps during break
+        if self.pomodoro_break { return; }
 
         let shield_reduction: f32 = self.character.inventory.iter()
             .filter(|i| i.item_type == ItemType::Shield)
@@ -251,7 +304,7 @@ impl App {
         if self.pomodoro_break { return; }
         
         self.distraction_timer += 1;
-        self.focus_streak = 0; // Distractions reset pomodoro streak
+        self.focus_streak = 0;
 
         if self.distraction_timer == self.config.grace_period_seconds + 1 {
             let _ = Notification::new().summary("TRAP SPRUNG").body("Return to terminal!").show();

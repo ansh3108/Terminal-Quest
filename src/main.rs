@@ -19,8 +19,15 @@ use crate::watcher::Event;
 struct Args {
     #[arg(default_value = "The Bug Swarm")]
     task: String,
+    
     #[arg(short, long, default_value_t = 20)]
     time: u32,
+
+    #[arg(short, long)]
+    sync: bool,
+
+    #[arg(short, long, default_value = "todo.md")]
+    file: String,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -32,7 +39,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut app = App::load().unwrap_or_else(|_| App::new());
     
-    if args.task != "The Bug Swarm" {
+    if args.sync {
+        app.sync_markdown(&args.file);
+        app.set_status(GameStatus::Resting);
+    } else if args.task != "The Bug Swarm" {
         app.start_boss(&args.task, args.time);
     }
 
@@ -70,10 +80,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     KeyCode::Char('m') => { app.set_status(GameStatus::Merchant); }
                     KeyCode::Char('n') => { 
                         if app.status != GameStatus::Battling { 
-                            app.start_boss("Next Challenge", 25); 
+                            app.start_next_from_board(); 
                         } 
                     }
-                    KeyCode::Esc => { app.set_status(GameStatus::Resting); } // Exit menus
+                    KeyCode::Esc => { app.set_status(GameStatus::Resting); }
                     KeyCode::Char('1') if app.status == GameStatus::Merchant => { app.buy_item(1); }
                     KeyCode::Char('2') if app.status == GameStatus::Merchant => { app.buy_item(2); }
                     KeyCode::Char('3') if app.status == GameStatus::Merchant => { app.buy_item(3); }
