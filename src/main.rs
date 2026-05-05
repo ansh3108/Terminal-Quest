@@ -50,38 +50,28 @@ fn main() -> Result<(), Box<dyn Error>> {
     watcher::start_watcher(tx, app.config.blacklist.clone());
 
     loop {
+        app.ui_tick();
         terminal.draw(|f| ui::render(f, &app))?;
 
         while let Ok(event) = rx.try_recv() {
             match event {
                 Event::DistractionDetected => { 
-                    if app.status == GameStatus::Battling { 
-                        app.track_distraction(); 
-                    } 
+                    if app.status == GameStatus::Battling { app.track_distraction(); } 
                 }
-                Event::FocusPulse => { 
-                    app.register_focus(0.5); 
-                }
-                Event::Tick => {
-                    app.tick();
-                }
+                Event::FocusPulse => { app.register_focus(0.5); }
+                Event::Tick => { app.tick(); }
             }
         }
 
         if event::poll(Duration::from_millis(50))? {
             if let CEvent::Key(key) = event::read()? {
                 match key.code {
-                    KeyCode::Char('q') => { 
-                        app.save()?; 
-                        break; 
-                    }
+                    KeyCode::Char('q') => { app.save()?; break; }
                     KeyCode::Char('u') => { app.use_elixir(); }
                     KeyCode::Char('s') => { app.set_status(GameStatus::Dashboard); }
                     KeyCode::Char('m') => { app.set_status(GameStatus::Merchant); }
                     KeyCode::Char('n') => { 
-                        if app.status != GameStatus::Battling { 
-                            app.start_next_from_board(); 
-                        } 
+                        if app.status != GameStatus::Battling { app.start_next_from_board(); } 
                     }
                     KeyCode::Esc => { app.set_status(GameStatus::Resting); }
                     KeyCode::Char('1') if app.status == GameStatus::Merchant => { app.buy_item(1); }

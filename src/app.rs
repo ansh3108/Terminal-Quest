@@ -56,6 +56,7 @@ pub struct Character {
     pub inventory: Vec<Item>,
     pub bosses_defeated: u32,
     pub focus_pulses: u32,
+    pub focus_history: Vec<(String, u64)>, 
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -86,6 +87,11 @@ pub struct App {
     pub pomodoro_break: bool,
     #[serde(skip)]
     pub break_timer: u32,
+    
+    #[serde(skip)]
+    pub visual_shake: u8,
+    #[serde(skip)]
+    pub visual_flash: u8,
 }
 
 impl App {
@@ -94,6 +100,11 @@ impl App {
             character: Character {
                 hp: 100, max_hp: 100, xp: 0, level: 1, gold: 0, inventory: vec![],
                 bosses_defeated: 0, focus_pulses: 0,
+                focus_history: vec![
+                    ("Mon".into(), 45), ("Tue".into(), 120), ("Wed".into(), 85),
+                    ("Thu".into(), 200), ("Fri".into(), 150), ("Sat".into(), 30),
+                    ("Sun".into(), 0), 
+                ],
             },
             config: Self::load_config(),
             quest_board: vec![],
@@ -104,6 +115,8 @@ impl App {
             focus_streak: 0,
             pomodoro_break: false,
             break_timer: 0,
+            visual_shake: 0,
+            visual_flash: 0,
         }
     }
 
@@ -116,24 +129,25 @@ impl App {
     }
 
     pub fn set_status(&mut self, new_status: GameStatus) {
-        if self.status == GameStatus::Battling && new_status != GameStatus::Battling {
-            return;
-        }
+        if self.status == GameStatus::Battling && new_status != GameStatus::Battling { return; }
         self.status = new_status;
+    }
+
+    pub fn ui_tick(&mut self) {
+        if self.visual_shake > 0 { self.visual_shake -= 1; }
+        if self.visual_flash > 0 { self.visual_flash -= 1; }
     }
 
     pub fn sync_markdown(&mut self, filepath: &str) {
         if let Ok(content) = fs::read_to_string(filepath) {
             let mut count = 0;
             self.quest_board.clear();
-
             for line in content.lines() {
                 let trimmed = line.trim();
                 if trimmed.starts_with("- [ ]") || trimmed.starts_with("* [ ]") {
                     let task_name = trimmed[5..].trim().to_string();
                     let mut time = 20;
                     let mut name = task_name.clone();
-                    
                     if task_name.ends_with("m)") {
                         if let Some(start) = task_name.rfind('(') {
                             let time_str = &task_name[start+1..task_name.len()-2];
@@ -143,14 +157,8 @@ impl App {
                             }
                         }
                     }
-
                     let hp = time as f32 * 10.0;
-                    self.quest_board.push(Boss {
-                        name,
-                        hp,
-                        max_hp: hp,
-                        monster_type: (time as usize % 3),
-                    });
+                    self.quest_board.push(Boss { name, hp, max_hp: hp, monster_type: (time as usize % 3) });
                     count += 1;
                 }
             }
@@ -175,12 +183,7 @@ impl App {
 
     pub fn start_boss(&mut self, name: &str, minutes: u32) {
         let hp = minutes as f32 * 10.0;
-        self.current_boss = Some(Boss {
-            name: name.to_string(),
-            hp,
-            max_hp: hp,
-            monster_type: (minutes as usize % 3),
-        });
+        self.current_boss = Some(Boss { name: name.to_string(), hp, max_hp: hp, monster_type: (minutes as usize % 3) });
         self.status = GameStatus::Battling;
         self.focus_streak = 0;
         self.logs.push(format!("Engaging: {}", name));
@@ -190,14 +193,20 @@ impl App {
         self.character.focus_pulses += 1;
         self.distraction_timer = 0;
         
+        if let Some(today) = self.character.focus_history.last_mut() {
+            today.1 = (self.character.focus_pulses / 60) as u64; 
+        }
+        
         if self.status != GameStatus::Battling { return; }
 
         if self.pomodoro_break {
-            self.logs.push("SHIELD OF REST is active! Your attacks bounce off. Go drink water!".into());
+            self.logs.push("SHIELD OF REST is active! Go drink water!".into());
             return;
         }
 
+        self.visual_flash = 2;
         self.focus_streak += 1;
+        
         if self.focus_streak >= 1500 {
             self.pomodoro_break = true;
             self.break_timer = 300;
@@ -209,9 +218,7 @@ impl App {
         if self.config.audio_enabled { audio::play_hit(); }
 
         let weapon_bonus: f32 = self.character.inventory.iter()
-            .filter(|i| i.item_type == ItemType::Weapon)
-            .map(|i| i.power)
-            .sum();
+            .filter(|i| i.item_type == ItemType::Weapon).map(|i| i.power).sum();
 
         if let Some(ref mut boss) = self.current_boss {
             boss.hp -= base_damage + weapon_bonus;
@@ -238,11 +245,7 @@ impl App {
         if self.config.audio_enabled { audio::play_victory(); }
         
         if let Some(boss) = &self.current_boss {
-            webhook::send_victory_message(
-                self.config.discord_webhook_url.clone(), 
-                boss.name.clone(), 
-                self.character.level
-            );
+            webhook::send_victory_message(self.config.discord_webhook_url.clone(), boss.name.clone(), self.character.level);
         }
 
         let elixir = Item { name: "Caffeine Elixir".into(), item_type: ItemType::Elixir, power: 0.0 };
@@ -255,8 +258,7 @@ impl App {
         match item_id {
             1 if self.character.gold >= 100 => {
                 self.character.gold -= 100;
-                self.character.max_hp += 50;
-                self.character.hp += 50;
+                self.character.max_hp += 50; self.character.hp += 50;
                 self.logs.push("Bought Heavy Armor: Max HP +50".into());
             }
             2 if self.character.gold >= 150 => {
@@ -277,12 +279,12 @@ impl App {
         if self.pomodoro_break { return; }
 
         let shield_reduction: f32 = self.character.inventory.iter()
-            .filter(|i| i.item_type == ItemType::Shield)
-            .map(|i| i.power)
-            .sum();
+            .filter(|i| i.item_type == ItemType::Shield).map(|i| i.power).sum();
 
         let reduced = (amount as f32 * (1.0 - shield_reduction)).max(1.0) as u32;
         self.character.hp = self.character.hp.saturating_sub(reduced);
+        
+        self.visual_shake = 6;
         
         if self.config.audio_enabled { audio::play_damage(); }
 
@@ -336,6 +338,10 @@ impl App {
         let data = fs::read_to_string("save_data.json")?;
         let mut app: App = serde_json::from_str(&data)?;
         app.config = Self::load_config();
+        
+        if app.character.focus_history.is_empty() {
+            app.character.focus_history = vec![("Sun".into(), 0)];
+        }
         Ok(app)
     }
 }

@@ -1,7 +1,7 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Alignment},
-    style::{Color, Style},
-    widgets::{Block, Borders, Paragraph, Gauge, List, ListItem},
+    style::{Color, Style, Modifier},
+    widgets::{Block, Borders, Paragraph, Gauge, List, ListItem, BarChart},
     Frame,
 };
 use crate::app::{App, GameStatus};
@@ -13,10 +13,17 @@ const MONSTERS: [&str; 3] = [
 ];
 
 pub fn render(f: &mut Frame, app: &App) {
+    // SCREEN SHAKE ANIMATION
+    let mut main_area = f.size();
+    if app.visual_shake > 0 && app.visual_shake % 2 == 0 {
+        main_area.x = main_area.x.saturating_add(3); // Jerk right
+        main_area.width = main_area.width.saturating_sub(3);
+    }
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(3), Constraint::Min(10), Constraint::Length(6)])
-        .split(f.size());
+        .split(main_area);
 
     let status_color = if app.pomodoro_break { Color::Cyan } 
                        else if app.distraction_timer > app.config.grace_period_seconds { Color::Red } 
@@ -52,16 +59,39 @@ pub fn render(f: &mut Frame, app: &App) {
                     display = format!("\n[ SHIELD OF REST ACTIVE ]\n\nTake a break!\nShield lowers in: {}s", app.break_timer);
                 }
 
-                f.render_widget(Paragraph::new(display).alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
+                // ATTACK FLASH ANIMATION
+                let mut style = Style::default().fg(if app.distraction_timer > 0 { Color::Red } else { Color::White });
+                if app.visual_flash > 0 {
+                    style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+                }
+
+                f.render_widget(Paragraph::new(display).alignment(Alignment::Center).style(style).block(Block::default().borders(Borders::ALL)), mid[1]);
             }
         }
         GameStatus::Dashboard => {
+            let dash_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(8), Constraint::Min(8)])
+                .split(mid[1]);
+
             let mins = app.character.focus_pulses / 60;
             let stats = format!(
-                "\n\n[ HALL OF RECORDS ]\n\nBosses Slain: {}\nEstimated Focus: {} Minutes\nTotal XP: {}\n\nActive Traps: {}",
+                "\nBosses Slain: {}\nEstimated Focus: {} Minutes\nTotal XP: {}\n\nActive Traps: {}",
                 app.character.bosses_defeated, mins, app.character.xp, app.config.blacklist.join(", ")
             );
-            f.render_widget(Paragraph::new(stats).alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
+            f.render_widget(Paragraph::new(stats).alignment(Alignment::Center).block(Block::default().title(" HALL OF RECORDS ").borders(Borders::ALL)), dash_chunks[0]);
+
+            // THE HEATMAP (Bar Chart)
+            let chart_data: Vec<(&str, u64)> = app.character.focus_history.iter().map(|(day, val)| (day.as_str(), *val)).collect();
+            let barchart = BarChart::default()
+                .block(Block::default().title(" PAST 7 DAYS (Focus Mins) ").borders(Borders::ALL))
+                .data(&chart_data)
+                .bar_width(7)
+                .bar_gap(2)
+                .bar_style(Style::default().fg(Color::Green))
+                .value_style(Style::default().fg(Color::Black).bg(Color::Green));
+            
+            f.render_widget(barchart, dash_chunks[1]);
         }
         GameStatus::Merchant => {
             let shop = format!(
@@ -72,25 +102,14 @@ pub fn render(f: &mut Frame, app: &App) {
         }
         _ => {
             let mut camp = String::from("\n( ^_^) \n\nSAFE AT CAMP\n\n");
-            
             if !app.quest_board.is_empty() {
-                camp.push_str(&format!("[ QUEST BOARD ]\nPending Tasks: {}\nUp Next: {}\n\n", 
-                    app.quest_board.len(), 
-                    app.quest_board[0].name
-                ));
+                camp.push_str(&format!("[ QUEST BOARD ]\nPending Tasks: {}\nUp Next: {}\n\n", app.quest_board.len(), app.quest_board[0].name));
                 camp.push_str("[n] Start Next Quest\n");
             } else {
                 camp.push_str("No pending quests.\n\n[n] Random Quest\n");
             }
-            
             camp.push_str("[s] Stats\n[m] Merchant\n[u] Use Elixir");
-            
-            f.render_widget(
-                Paragraph::new(camp)
-                    .alignment(Alignment::Center)
-                    .block(Block::default().borders(Borders::ALL)), 
-                mid[1]
-            );
+            f.render_widget(Paragraph::new(camp).alignment(Alignment::Center).block(Block::default().borders(Borders::ALL)), mid[1]);
         }
     }
 
