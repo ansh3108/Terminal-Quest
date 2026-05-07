@@ -56,7 +56,7 @@ pub struct Character {
     pub inventory: Vec<Item>,
     pub bosses_defeated: u32,
     pub focus_pulses: u32,
-    pub focus_history: Vec<(String, u64)>, 
+    pub focus_history: Vec<(String, u64)>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -103,7 +103,7 @@ impl App {
                 focus_history: vec![
                     ("Mon".into(), 45), ("Tue".into(), 120), ("Wed".into(), 85),
                     ("Thu".into(), 200), ("Fri".into(), 150), ("Sat".into(), 30),
-                    ("Sun".into(), 0), 
+                    ("Sun".into(), 0), // Today
                 ],
             },
             config: Self::load_config(),
@@ -204,7 +204,7 @@ impl App {
             return;
         }
 
-        self.visual_flash = 2;
+        self.visual_flash = 2; 
         self.focus_streak += 1;
         
         if self.focus_streak >= 1500 {
@@ -339,6 +339,7 @@ impl App {
         let mut app: App = serde_json::from_str(&data)?;
         app.config = Self::load_config();
         
+        // Ensure legacy saves get a focus_history vector
         if app.character.focus_history.is_empty() {
             app.character.focus_history = vec![("Sun".into(), 0)];
         }
