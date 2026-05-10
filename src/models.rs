@@ -33,7 +33,8 @@ pub struct Item {
 
 #[derive(Serialize, Deserialize, PartialEq, Default, Clone, Copy)]
 pub enum GameStatus {
-    #[default] Resting,
+    #[default]
+    Resting,
     Dashboard,
     Merchant,
     Battling,
